@@ -1,6 +1,6 @@
 ;==========================================================================
 ;  MC8KGO 0.1 - unified clean-room DOS enabler for the TDK MusicCard
-;              DMC-8000 (MW-8232) and DMC-9000 (MW-8432) PCMCIA sound
+;              MC-8000 (MW-8232) and DMC-9000 (MW-8432) PCMCIA sound
 ;              cards (EMU8000-family wavetable + CS4216 codec + a 16550
 ;              MIDI DIN UART), three host backends in one .COM:
 ;
@@ -17,10 +17,10 @@
 ;
 ;  THE CARDS (from their own CIS + live probing; tdk-dmc9000 repo):
 ;    MANFID 0105/0100 - IDENTICAL on both models, so the model comes from
-;    the VERS_1 product string: "MW-8232" = DMC-8000, "MW-8432" = DMC-9000.
+;    the VERS_1 product string: "MW-8232" = MC-8000, "MW-8432" = DMC-9000.
 ;    Config registers at attribute 100h (COR + CCSR + PRR + SCR).
 ;    Config index 0 = TWO 16-byte I/O windows at the CIS entry-0 bases:
-;      DMC-8000: 240h + 320h        DMC-9000: 260h + 320h
+;      MC-8000: 240h + 320h        DMC-9000: 260h + 320h
 ;    window 0 MUST BE 16-BIT: the ASIC's EMU8200 register block (PTR at
 ;      +0Eh, DATA0 at +4/+6, DATA1..3 at +8/+0Ah/+0Ch) reads torn words
 ;      through an 8-bit window;
@@ -136,7 +136,7 @@ r_irq    db 0FFh                      ; CS granted IRQ (FFh = none)
 r_w0     db 0                         ; window 0 decodes (not an FF wall)
 r_uart   db 0                         ; window 1 LSR reads like an idle 16550
 r_ccsr   db 0                         ; CCSR readback (want bit1 = Audio)
-is9000   db 0                         ; model: 0 = DMC-8000, 1 = DMC-9000
+is9000   db 0                         ; model: 0 = MC-8000, 1 = DMC-9000
 matched  db 0                         ; 1 = MANFID hit (0 = forced)
 k_name   dw n_unk                     ; display name
 cfgbase  dw TDK_COR                   ; COR base from CISTPL_CONFIG
@@ -275,7 +275,7 @@ force_ident:
         ret
 
 ; ---- vers_model: both models carry MANFID 0105/0100, so the model comes
-;      from the VERS_1 product string: "MW-8232" = DMC-8000, "MW-8432" =
+;      from the VERS_1 product string: "MW-8232" = MC-8000, "MW-8432" =
 ;      DMC-9000.  Sets [is9000], the display name, and - unless /IO1
 ;      pinned it - the model's entry-0 window 0 base (240h vs 260h).
 ;      Resident: the CS hot-plug path identifies too. ---------------------
@@ -302,7 +302,7 @@ vers_model:
         cmp  byte [versbuf+bx+3], '8'
         jne  .next
         cmp  byte [versbuf+bx+4], '4'
-        jne  .dflt                    ; "MW-82xx" (or unknown) = DMC-8000
+        jne  .dflt                    ; "MW-82xx" (or unknown) = MC-8000
         mov  byte [is9000], 1
         mov  word [k_name], n_tdk9
 .dflt:
@@ -3251,7 +3251,7 @@ errout:                               ; SI = message; print + exit
 ;==========================================================================
 ;  MESSAGES
 ;==========================================================================
-m_banner:  db 'MC8KGO 0.1 - TDK MusicCard DMC-8000/9000 enabler (PCIC/CS/OB)',13,10,0
+m_banner:  db 'MC8KGO 0.1 - TDK MusicCard MC-8000/DMC-9000 enabler (PCIC/CS/OB)',13,10,0
 m_settle:  db 'Socket is slow: CIS settled after ',0
 m_settle2: db ' x 20ms.',13,10,0
 m_settlot: db '2s or more.',13,10,0
@@ -3356,7 +3356,7 @@ m_offnone: db 'Nothing resident to switch off.',13,10,0
 m_csnoforce: db 'Note: /FORCE is not supported in CS mode - ignored.',13,10,0
 ; ---- names ----
 n_tdk:     db 'TDK MusicCard',0
-n_tdk8:    db 'TDK DMC-8000 (MW-8232)',0
+n_tdk8:    db 'TDK MC-8000 (MW-8232)',0
 n_tdk9:    db 'TDK DMC-9000 (MW-8432)',0
 n_unk:     db 'Unknown card',0
 

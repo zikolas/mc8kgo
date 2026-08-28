@@ -1,6 +1,6 @@
 # MC8KGO
 
-Clean-room DOS enabler for the TDK MusicCard **DMC-8000** (MW-8232) and
+Clean-room DOS enabler for the TDK MusicCard **MC-8000** (MW-8232) and
 **DMC-9000** (MW-8432) PCMCIA sound cards — an EMU8000-family wavetable
 synth plus a CS4216 codec and a 16550 MIDI DIN UART, which TDK shipped
 with Windows-only drivers. MC8KGO replaces the vendor's three-driver DOS
@@ -16,7 +16,7 @@ Three host backends, auto-detected when no mode switch is given:
 
 The two models share MANFID 0105/0100, so the model is identified from
 the VERS_1 product string, which also picks the entry-0 window base
-(240h for the DMC-8000, 260h for the DMC-9000; `/IO1`/`/IO2` override).
+(240h for the MC-8000, 260h for the DMC-9000; `/IO1`/`/IO2` override).
 The enabler maps the card's two 16-byte I/O windows — the EMU8200
 register block (16-bit) and the MIDI DIN 16550 (8-bit, registers 2
 bytes apart, divisor 5 for MIDI baud) — writes the COR (config index 0)
