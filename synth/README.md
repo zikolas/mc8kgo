@@ -113,6 +113,11 @@ TDKROMF anchors every read against a known ROM word and re-verifies —
 the how and why are in its header comment. Dump twice and compare
 before trusting a byte.
 
+The anchoring assumes the DMC-9000's image (the sentinel is word 1C3h
+of its ROM): on a card without that image — an MC-8000 included — the
+anchor never validates and every mode returns unreliable data with no
+warning. This is a DMC-9000 tool.
+
 ## Build
 
 Open Watcom 1.9, 16-bit small model, C89 (an on-box BLD.BAT with
