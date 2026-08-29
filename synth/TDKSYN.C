@@ -92,7 +92,7 @@ static void __interrupt __far __loadds handler(union INTPACK r)
     case 0x05: {                    /* fire a note directly, bypassing the
                                      * stream parser and the ring entirely,
                                      * and report what it actually got */
-        SF2ZONE *z = sf2_pick(&gmap, 0, 60);
+        SF2ZP z = sf2_pick(&gmap, 0, 60);
         if (!z) { r.w.bx = 0xFFFF; return; }
         r.w.bx = (unsigned)(z->st & 0xFFFFL);   /* want 53031 = 0xCF27 */
         r.w.cx = (unsigned)z->root;             /* want 76 */
@@ -106,18 +106,19 @@ static void __interrupt __far __loadds handler(union INTPACK r)
         return;
 
     case 0xFE:                      /* uninstall: silence, unhook, and tell
-                                     * the caller which block to free */
+                                     * the caller which blocks to free */
         allsil();
         HWCF3(0x0000);
         _dos_setvect(0x2F, old2f);
         r.w.bx = resident_psp;
+        r.w.cx = gmap.zseg;         /* the zone table's own block */
         return;
 
     case 0x07: {                    /* re-init the chip, THEN play.
                                      * If this sounds and AL=05 does not, the
                                      * card's state is not surviving between
                                      * install and use. */
-        SF2ZONE *z;
+        SF2ZP z;
         chip_init();
         synth_reset();
         z = sf2_pick(&gmap, 0, 60);
@@ -187,8 +188,16 @@ int main(int argc, char **argv)
             struct SREGS sr;
             if (!already_resident()) { printf("not resident.\n"); return 1; }
             ri.h.ah = 0xBD; ri.h.al = 0xFE;
+            ri.x.cx = 0;                      /* an OLDER resident copy
+                                               * echoes CX untouched - never
+                                               * free a garbage segment */
             int86(0x2F, &ri, &ro);
             segread(&sr);
+            if (ro.x.cx) {                    /* the zone table's block */
+                sr.es = ro.x.cx;
+                ri.h.ah = 0x49;
+                int86x(0x21, &ri, &ro, &sr);
+            }
             sr.es = ro.x.bx;                  /* the resident PSP */
             ri.h.ah = 0x49;                   /* free the memory block */
             int86x(0x21, &ri, &ro, &sr);
@@ -233,6 +242,11 @@ int main(int argc, char **argv)
         printf("path; /F<path> overrides. No preset data is built in.\n");
         return 1;
     }
+    if (rc == SF2_ENOMEM) {
+        printf("no DOS memory for the zone table (%u paras)\n",
+               (unsigned)((SF2_MAXZONE * sizeof(SF2ZONE) + 15L) / 16));
+        return 1;
+    }
     if (rc != SF2_OK) { printf("could not parse that SoundFont\n"); return 1; }
     if (gmap.nzone == 0) {
         printf("no zones for that mode - is this the right SoundFont?\n");
@@ -266,6 +280,10 @@ int main(int argc, char **argv)
      * This keeps the SoundFont parser and stdio too, which is wasteful - the
      * zone table is the only part that must survive - but correct. Trimming
      * it is a later optimisation, not a correctness issue. */
+    {   /* the environment block is transient too */
+        unsigned envseg = *(unsigned __far *)MK_FP(_psp, 0x2C);
+        if (envseg) _dos_freemem(envseg);
+    }
     paras = *(unsigned __far *)MK_FP(_psp - 1, 3);
     _dos_keep(0, paras);
     return 0;

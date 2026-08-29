@@ -17,6 +17,10 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#ifdef __WATCOMC__
+#include <dos.h>
+#endif
 #include "SF2RT.H"
 
 /* ---- chunk locations, found by walking the RIFF tree ----
@@ -306,6 +310,30 @@ typedef struct {
     int val[64];
 } GENS;
 
+/* Allocate the zone table as its own DOS block, UMBs FIRST: with an upper
+ * memory provider loaded and linked, the ~34-53KB table costs no
+ * conventional memory at all, and either way it stays out of the resident
+ * image (the TSR keeps only code + a small DGROUP).  The strategy and the
+ * UMB link are restored around the call. */
+#ifdef __WATCOMC__
+static unsigned zalloc(unsigned paras, unsigned *seg)
+{
+    union REGS r;
+    unsigned rc, strat, link;
+    r.x.ax = 0x5800; int86(0x21, &r, &r); strat = r.x.ax;
+    r.x.ax = 0x5802; int86(0x21, &r, &r); link = r.h.al;
+    r.x.ax = 0x5803; r.x.bx = 1; int86(0x21, &r, &r);
+    r.x.ax = 0x5801; r.x.bx = 0x0080;    /* first fit, high THEN low -
+                                          * 0x40 is high ONLY and fails
+                                          * outright without a big UMB */
+    int86(0x21, &r, &r);
+    rc = _dos_allocmem(paras, seg);
+    r.x.ax = 0x5801; r.x.bx = strat; int86(0x21, &r, &r);
+    r.x.ax = 0x5803; r.x.bx = link;  int86(0x21, &r, &r);
+    return rc;
+}
+#endif
+
 static void read_gens(long base, unsigned g0, unsigned g1, GENS *g)
 {
     unsigned i, op, am;
@@ -375,6 +403,19 @@ int sf2_load(char *path, SF2MAP *m)
     memset(m->first, 0, sizeof(m->first));
     memset(m->count, 0, sizeof(m->count));
     memset(m->dexcl, 0, sizeof(m->dexcl));
+
+    if (m->zseg == 0) {
+#ifdef __WATCOMC__
+        if (zalloc((unsigned)((SF2_MAXZONE * sizeof(SF2ZONE) + 15L) / 16),
+                   &m->zseg))
+            return SF2_ENOMEM;
+        m->zone = (SF2ZP)MK_FP(m->zseg, 0);
+#else
+        m->zone = malloc(SF2_MAXZONE * sizeof(SF2ZONE));
+        if (!m->zone) return SF2_ENOMEM;
+        m->zseg = 1;
+#endif
+    }
 
     fp = fopen(path, "rb");
     if (!fp) return SF2_ENOFILE;
@@ -542,34 +583,42 @@ int sf2_load(char *path, SF2MAP *m)
     }
 
     fclose(fp);
-    return m->nzone ? SF2_OK : SF2_EPARSE;
+    if (m->nzone) {
+#ifdef __WATCOMC__
+        unsigned mx;                  /* shrink the block to what is used */
+        _dos_setblock((unsigned)((m->nzone * (unsigned long)sizeof(SF2ZONE)
+                                  + 15L) / 16), m->zseg, &mx);
+#endif
+        return SF2_OK;
+    }
+    return SF2_EPARSE;
 }
 
 /* Drum kit: the note number selects the instrument, so every zone has a narrow
  * key range and we simply find the one covering this note. */
-SF2ZONE *sf2_pick_drum(SF2MAP *m, int note)
+SF2ZP sf2_pick_drum(SF2MAP *m, int note)
 {
     unsigned i;
     for (i = 0; i < m->dcount; i++)
         if (note >= (int)m->zone[m->dfirst+i].lo &&
             note <= (int)m->zone[m->dfirst+i].hi)
             return &m->zone[m->dfirst+i];
-    return m->dcount ? &m->zone[m->dfirst] : (SF2ZONE *)0;
+    return m->dcount ? &m->zone[m->dfirst] : (SF2ZP)0;
 }
 
-SF2ZONE *sf2_pick(SF2MAP *m, int prog, int note)
+SF2ZP sf2_pick(SF2MAP *m, int prog, int note)
 {
     unsigned i, f, n;
-    if (prog < 0 || prog > 127) return (SF2ZONE *)0;
+    if (prog < 0 || prog > 127) return (SF2ZP)0;
     f = m->first[prog];
     n = m->count[prog];
     for (i = 0; i < n; i++)
         if (note >= (int)m->zone[f+i].lo && note <= (int)m->zone[f+i].hi)
             return &m->zone[f+i];
-    return n ? &m->zone[f] : (SF2ZONE *)0;
+    return n ? &m->zone[f] : (SF2ZP)0;
 }
 
-int sf2_layers(SF2MAP *m, int prog, int note, SF2ZONE **out, int max)
+int sf2_layers(SF2MAP *m, int prog, int note, SF2ZP *out, int max)
 {
     unsigned i, f, n;
     int k = 0;
@@ -583,7 +632,7 @@ int sf2_layers(SF2MAP *m, int prog, int note, SF2ZONE **out, int max)
     return k;
 }
 
-int sf2_layers_drum(SF2MAP *m, int note, SF2ZONE **out, int max)
+int sf2_layers_drum(SF2MAP *m, int note, SF2ZP *out, int max)
 {
     unsigned i;
     int k = 0;

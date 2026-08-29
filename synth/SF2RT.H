@@ -9,14 +9,19 @@
  * loaded whole and roughly 460 melodic zones fell off the end, leaving the
  * higher timbres thin or missing with nothing to say so.
  *
- * This array dominates DGROUP in the small model, so it cannot grow freely:
- * 1400 zones is about 53KB of the 64KB segment. If a future bank needs more,
- * the zone table has to move out of DGROUP rather than this number going up. */
+ * The table lives in its own DOS block (sf2_load allocates it UMB-first and
+ * resizes it to the parsed count), so this cap costs nothing resident - it
+ * only bounds the transient allocation. */
 #define SF2_MAXZONE 1400
+
+#ifndef __WATCOMC__
+#define __far                 /* host-side validation builds have no far */
+#endif
 
 #define SF2_OK       0
 #define SF2_ENOFILE -1
 #define SF2_EPARSE  -2
+#define SF2_ENOMEM  -3
 
 typedef struct {
     unsigned char lo, hi, root, modes;   /* modes: sample flags in bits 0-1,
@@ -42,13 +47,21 @@ typedef struct {
     int pc;                       /* pitchCorrection, signed cents */
 } SF2SMP;
 
+typedef SF2ZONE __far *SF2ZP;
+
 typedef struct {
     unsigned short first[128], count[128];   /* the melodic bank        */
     unsigned short dfirst, dcount;           /* the chosen drum kit     */
     unsigned char  dexcl[128];               /* drum note -> exclusiveClass
                                               * choke group (0 = none)  */
     unsigned       nzone;
-    SF2ZONE        zone[SF2_MAXZONE];
+    unsigned       zseg;                     /* the zone table's own DOS
+                                              * block (UMB when one is
+                                              * linked), resized to nzone
+                                              * after the parse - NOT in
+                                              * DGROUP, NOT in the TSR's
+                                              * kept image               */
+    SF2ZP          zone;
 } SF2MAP;
 
 /* Which banks sf2_load builds the map from.
@@ -69,13 +82,13 @@ void     sf2_mode(int mt32);            /* 0 = General MIDI, 1 = MT-32 */
 void     sf2_attack_max(int v);
 
 int      sf2_load(char *path, SF2MAP *m);
-SF2ZONE *sf2_pick(SF2MAP *m, int prog, int note);
-SF2ZONE *sf2_pick_drum(SF2MAP *m, int note);
+SF2ZP    sf2_pick(SF2MAP *m, int prog, int note);
+SF2ZP    sf2_pick_drum(SF2MAP *m, int note);
 
 /* A preset may LAYER several zones on the same key - 49 of the 128 presets in
  * the MC-8000's bank do. Playing only the first match loses most of the
  * sound, so collect them all and give each its own voice. */
-int sf2_layers(SF2MAP *m, int prog, int note, SF2ZONE **out, int max);
-int sf2_layers_drum(SF2MAP *m, int note, SF2ZONE **out, int max);
+int sf2_layers(SF2MAP *m, int prog, int note, SF2ZP *out, int max);
+int sf2_layers_drum(SF2MAP *m, int note, SF2ZP *out, int max);
 
 #endif

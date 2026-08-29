@@ -344,7 +344,7 @@ static unsigned note_to_ip(int note, int root, int cents, int scale)
  * hardware-proven reference for this chip. Where this file used to differ -
  * volume/filter targets, the attenuation curve, filterQ - instruments came
  * out audibly wrong. */
-static void play_zone(int ch, SF2ZONE *s, int note, int vel, int mch, int drum)
+static void play_zone(int ch, SF2ZP s, int note, int vel, int mch, int drum)
 {
     unsigned ip, pt, at, acut, ft;
     int vol, pv;
@@ -506,7 +506,7 @@ void synth_note_on(int ch, int note, int vel)
      * no longer reentrant, which is fine: the player is single-threaded and
      * the TSR guards with a busy flag. The alternative is switching SS to our
      * own stack inside the handler so SS == DS again. */
-    static SF2ZONE *lay[MAXLAYER];
+    static SF2ZP lay[MAXLAYER];
     int n, i, v;
 
     if (vel == 0) { synth_note_off(ch, note); return; }
