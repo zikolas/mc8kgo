@@ -1,8 +1,7 @@
 # The EMU8000 wavetable synth (TDK MC-8000/DMC-9000)
 
-Three DOS programs that drive the TDK MusicCard's EMU8000-family
-wavetable synth directly — a card TDK shipped with Windows-only
-drivers:
+Four DOS programs that drive the TDK MusicCard's EMU8000-family
+wavetable synth directly — cards TDK shipped with Windows-only drivers:
 
 - **TDKSYN** — a resident General MIDI synth TSR: MIDI bytes in over an
   INT 2Fh multiplex, the card's own ROM instruments out. This is what
@@ -12,15 +11,19 @@ drivers:
 - **TDKSEND** — a diagnostic that sends test MIDI through the resident
   TSR and reads its counters (state check, dropped bytes, discarded
   SysEx).
+- **TDKROMF** — finds and dumps the DMC-9000's preset map out of the
+  card's own ROM (see The preset map below).
 
 ## Why
 
-The MC-8000 pairs an EMU8000-family wavetable (2MB General MIDI sample
-ROM) with a CS4216 codec behind a two-window ASIC, and TDK never shipped
-a DOS driver — the card was silent outside Windows. MC8KGO (this repo)
-enables the card; these programs are the DOS synthesis that never
-existed. The preset map is read at runtime from the vendor's own
-SoundFont, so nothing derived from it ships here.
+Both cards pair an EMU8000-family wavetable with a CS4216 codec behind
+a two-window ASIC, and TDK never shipped a DOS driver — the cards were
+silent outside Windows. MC8KGO (this repo) enables them; these programs
+are the DOS synthesis that never existed. The instruments live in
+sample ROM on the card — 2MB of General MIDI on the MC-8000, 4MB of
+GM/GS on the DMC-9000 — and the preset map that describes them is the
+vendor's own data, read at runtime, so nothing derived from it ships
+here.
 
 ## TDKSYN
 
@@ -36,7 +39,9 @@ SoundFont, so nothing derived from it ships here.
     /A=n     volume-attack cap (default 120 - a few ms of ramp against
              onset clicks; 127 = uncapped, as the vendor runs it)
     /IO=hex  window 0 base; otherwise probed (240h then 260h)
-    /F<file> SoundFont path (default C:\WINDOWS\SYSTEM\SYNTH2GM.SF2)
+    /F<file> SoundFont path (default C:\WINDOWS\SYSTEM\SYNTH2GM.SF2 —
+             the MC-8000's map; a DMC-9000 needs /F with its own, see
+             The preset map)
     /H<a,b,c> HWCF1/2/3 override, hex (bench diagnostics)
 
 The resident interface (`AH` = BDh): `AL=00` install check -> AL=FFh,
@@ -46,16 +51,19 @@ Games reach it through MPUSHIM's MPU-401 facade at 330h, in every world
 a DOS game lives in:
 
     MC8KGO                  the enabler
-    TDKSYN                  this synth, resident
+    TDKSYN                  this synth, resident (/F... on a DMC-9000)
     ...trap hosts...        JEMM+QPIEMU, HDPMI16i, HDPMI32i
     MPUSHM16 /SYNTH         the 16-bit protected-mode shim
     MPUSHIM  /SYNTH         the 32-bit + V86 shim
 
+MPUSHIM's `go/GOTSYN.BAT` and `go/GOTSYN9.BAT` wrap this recipe.
 Bench-proven catalogue: Monkey Island and DOSMID (V86), DOOM (32-bit),
-Tyrian (16-bit), all from one boot. The synthesis follows the ALSA
-emu8000/emux drivers and was cross-checked register-by-register against
-the vendor's own driver running on the hardware — sustain, one-shot
-loop handling and the exclusiveClass drum chokes included.
+Tyrian (16-bit), all from one boot on the MC-8000; DOSMID and DOOM
+verified the same way on the DMC-9000 with its extracted map. The
+synthesis follows the ALSA emu8000/emux drivers and was cross-checked
+register-by-register against the vendor's own driver running on the
+hardware — sustain, one-shot loop handling and the exclusiveClass drum
+chokes included.
 
 ## TDKPLAY
 
@@ -66,31 +74,38 @@ the drum channel handled; sub-ms timing off the 8253 latch without
 reprogramming the timer. `/P` ignores the SoundFont envelopes (a
 diagnostic baseline).
 
-## The SoundFont
+## The preset map
 
-The preset map comes at runtime from the file the vendor's Windows
-installer places at `C:\WINDOWS\SYSTEM\SYNTH2GM.SF2`. Its sample-data
-chunk is empty — every sample lives in the card's ROM — so the file is
-purely a map, and it is not redistributed here: install the vendor
-driver set once, or point `/F` at the file.
+The engine needs a SoundFont describing where each instrument lives in
+the card's ROM. Both cards' maps are E-mu's data and are never
+redistributed here — each comes from your own card or driver set:
 
-## DMC-9000 status
+- **MC-8000**: the file the vendor's Windows installer places at
+  `C:\WINDOWS\SYSTEM\SYNTH2GM.SF2`. Its sample-data chunk is empty —
+  every sample lives in ROM — so the file is purely a map. Install the
+  vendor driver set once, or point `/F` at the file.
+- **DMC-9000**: no bank file exists anywhere in the vendor set. Its map
+  is a silicon SoundFont — a standard SF2 image embedded in the card's
+  own 4MB ROM ("4MB GMGS Rev E") — and TDKROMF dumps it off the card.
+  The extracted map loads with `/F` exactly like SYNTH2GM.SF2.
 
-Working. MC8KGO enables it (window 0 at 260h, picked by model), the
-MIDI DIN works, and the internal wavetable plays. The 9000 ships no
-bank file: its map is a silicon SoundFont — a standard SF2 image
-embedded in the card's own 4MB ROM ("4MB GMGS Rev E", which also
-carries the full MT-32 set in bank 127 and a CM-64/32 kit, so `/M`
-works). TDKROMF locates it (RIFF signature scan, both byte orders) and
-dumps verified word ranges off the card; the extracted map then loads
-with `/F` exactly like SYNTH2GM.SF2, sample data staying in ROM.
+Both banks carry the full MT-32 timbre set in bank 127 and a CM-64/32
+drum kit, which is what `/M` selects.
 
-The bank data is E-mu's, extracted from your own card and never
-redistributed — same policy as SYNTH2GM.SF2 above. Assembling the dump
-into the bank file is host-side for now (walk the RIFF, keep INFO,
-empty the sdta LIST, copy pdta, add the smpl chunk's ROM word base to
-every shdr start/end/loop offset so they are ROM-absolute); a one-run
-extractor that writes the file directly is planned.
+## TDKROMF
+
+    TDKROMF CAL [addrhex]                       read-stability check
+    TDKROMF SCAN                                find the SF2 image
+    TDKROMF DUMP <starthex> <counthex> <file> [/SWAP]
+    /IO=hex  window 0 override (240h then 260h probed)
+
+On a DMC-9000, SCAN reports the image at ROM byte 380h, byte-swapped
+(the ROM byte stream is high-byte-first — dump with `/SWAP`), RIFF
+size 4188956. Assembling the dump into the bank file is host-side for
+now: walk the RIFF, keep INFO, empty the sdta LIST, copy pdta, and add
+the smpl chunk's ROM word base to every shdr start/end/loop offset so
+they are ROM-absolute. A one-run extractor that writes the file
+directly is planned.
 
 The ROM read path races: SMLD reads intermittently return the word one
 ahead, in sticky stretches that survive double-read verification.
