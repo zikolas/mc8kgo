@@ -34,6 +34,24 @@ in every world (V86, 16-bit and 32-bit protected mode) and delivers the
 bytes either to a resident synth TSR driving the card's wavetable, or to
 the card's own DIN UART (`/UART=320 /STRIDE=2 /DIV=5`).
 
+## The wavetable synth (synth/)
+
+The card's EMU8000-family wavetable, playable from DOS — which TDK never
+shipped:
+
+- **synth/TDKSYN** stays resident and turns the card into a General MIDI
+  (or MT-32) synth for games:
+  [MPUSHIM](https://github.com/zikolas/mpushim) traps an MPU-401 at 330h
+  in every trap world (real mode/V86, 16-bit and 32-bit protected mode)
+  and feeds it each MIDI byte. DOOM, Tyrian, Monkey Island and DOSMID
+  all play the card's ROM instruments this way from one boot.
+- **synth/TDKPLAY** plays a .MID file from the command line;
+  **synth/TDKSEND** is the diagnostic.
+
+The quick chain: `MC8KGO`, `TDKSYN`, then the MPUSHIM stack with
+`/SYNTH`. Switches, the SoundFont requirement and provenance:
+[synth/README.md](synth/README.md).
+
 ## Build
 
     nasm -f bin MC8KGO.ASM -o MC8KGO.COM
@@ -45,4 +63,10 @@ Clean-room: the cards' own CIS read off the hardware, the public Intel
 SystemSoft CardSoft technical guide, HP OmniBook Socket Services
 behaviour probed live, and the published 16550 register model. No vendor
 driver was read or disassembled for this enabler. Forked from SCP55GO
-2.1 (same author). MIT.
+2.1 (same author).
+
+## License
+
+GPL v2 — see [LICENSE](LICENSE). The enabler began as MIT; the repo
+moved to GPL v2 when the synth — which carries GPL-2.0 tables from the
+Linux ALSA drivers — moved in.

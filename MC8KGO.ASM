@@ -15,7 +15,7 @@
 ;  CS arbiter is loaded we must go through it), then the 'SS' Socket
 ;  Services signature (OmniBook ROM), then an 82365 probe at 3E0h.
 ;
-;  THE CARDS (from their own CIS + live probing; tdk-dmc9000 repo):
+;  THE CARDS (from their own CIS + live probing):
 ;    MANFID 0105/0100 - IDENTICAL on both models, so the model comes from
 ;    the VERS_1 product string: "MW-8232" = MC-8000, "MW-8432" = DMC-9000.
 ;    Config registers at attribute 100h (COR + CCSR + PRR + SCR).
@@ -49,13 +49,14 @@
 ;
 ;  Build (host or on-box):  nasm -f bin MC8KGO.ASM -o MC8KGO.COM
 ;
-;  (C) 2026 zikolas, MIT.  Clean-room provenance: the cards' own CIS read
-;  off the hardware (tdk-dmc9000 repo cis/), the public Intel 82365SL
+;  (C) 2026 zikolas.  GNU General Public License v2 - see LICENSE.
+;  Clean-room provenance: the cards' own CIS read
+;  off the hardware, the public Intel 82365SL
 ;  register set, the PCMCIA CS/SS specs via RBIL61 + the SystemSoft
 ;  CardSoft technical guide (API binding), HP OmniBook Socket Services
 ;  behavior probed live (es1688go repo), and the published 16550 register
 ;  model.  No vendor driver was read or disassembled.  Structure forked
-;  from our SCP55GO 2.1 (same author, MIT).
+;  from our SCP55GO 2.1 (same author).
 ;==========================================================================
         cpu  8086
         org  100h
