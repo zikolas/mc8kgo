@@ -76,11 +76,27 @@ driver set once, or point `/F` at the file.
 
 ## DMC-9000 status
 
-MC8KGO enables it (window 0 at 260h, picked by model) and the MIDI DIN
-works. The internal wavetable has no map yet: SYNTH2GM.SF2 describes the
-MC-8000's 2MB ROM, and the 9000's 4MB ROM differs — TDKSYN warns when
-it finds the card at 260h. The 9000 carries its bank as a silicon
-SoundFont in its own ROM; dumping that is on the list.
+Working. MC8KGO enables it (window 0 at 260h, picked by model), the
+MIDI DIN works, and the internal wavetable plays. The 9000 ships no
+bank file: its map is a silicon SoundFont — a standard SF2 image
+embedded in the card's own 4MB ROM ("4MB GMGS Rev E", which also
+carries the full MT-32 set in bank 127 and a CM-64/32 kit, so `/M`
+works). TDKROMF locates it (RIFF signature scan, both byte orders) and
+dumps verified word ranges off the card; the extracted map then loads
+with `/F` exactly like SYNTH2GM.SF2, sample data staying in ROM.
+
+The bank data is E-mu's, extracted from your own card and never
+redistributed — same policy as SYNTH2GM.SF2 above. Assembling the dump
+into the bank file is host-side for now (walk the RIFF, keep INFO,
+empty the sdta LIST, copy pdta, add the smpl chunk's ROM word base to
+every shdr start/end/loop offset so they are ROM-absolute); a one-run
+extractor that writes the file directly is planned.
+
+The ROM read path races: SMLD reads intermittently return the word one
+ahead, in sticky stretches that survive double-read verification.
+TDKROMF anchors every read against a known ROM word and re-verifies —
+the how and why are in its header comment. Dump twice and compare
+before trusting a byte.
 
 ## Build
 
@@ -90,9 +106,10 @@ Open Watcom 1.9, 16-bit small model, C89 (an on-box BLD.BAT with
     wcc -ms TDKSYN.C
     wlink system dos file TDKSYN.obj
 
-TDKPLAY and TDKSEND build the same way. TDKSYN.C and TDKPLAY.C are
-one-file builds — they include SYNTH.C (the voice engine), SF2RT.C (the
-SoundFont reader) and MIDIRT.C (the byte-stream parser) directly.
+TDKPLAY, TDKSEND and TDKROMF build the same way. TDKSYN.C and
+TDKPLAY.C are one-file builds — they include SYNTH.C (the voice
+engine), SF2RT.C (the SoundFont reader) and MIDIRT.C (the byte-stream
+parser) directly; TDKROMF.C stands alone.
 
 ## Provenance
 
