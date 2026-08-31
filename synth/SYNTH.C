@@ -395,12 +395,12 @@ static void play_zone(int ch, SF2ZP s, int note, int vel, int mch, int drum)
         if (pv > 255) pv = 255;
         g_apan = pan_volumes[pv];
         g_aaux = pan_volumes[255 - pv];
-        PSST(ch, ((unsigned long)g_apan << 24) | (s->ls - 1L));
+        PSST(ch, ((unsigned long)g_apan << 24) | (SF2_LS(&gmap, s) - 1L));
     }
-    CSL(ch,  s->le - 1L);          /* chorus send (bits 24-31) still 0 - the
+    CSL(ch,  SF2_LE(&gmap, s) - 1L);          /* chorus send (bits 24-31) still 0 - the
                                     * effect engine is not initialised yet */
     CCCA(ch, ((unsigned long)(g_flat ? 0 : (s->modes >> 4)) << 28)
-             | (s->st - 1L));      /* filterQ in bits 28-31 */
+             | (SF2_ST(&gmap, s) - 1L));   /* filterQ in bits 28-31 */
     R0080(ch, 0L); R00A0(ch, 0L);
     /* "reset volume" (start_voice): the volume TARGET is 0 - amplitude is
      * the envelope engine's job, started by the DCYSUSV write below - and

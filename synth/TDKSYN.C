@@ -94,7 +94,7 @@ static void __interrupt __far __loadds handler(union INTPACK r)
                                      * and report what it actually got */
         SF2ZP z = sf2_pick(&gmap, 0, 60);
         if (!z) { r.w.bx = 0xFFFF; return; }
-        r.w.bx = (unsigned)(z->st & 0xFFFFL);   /* want 53031 = 0xCF27 */
+        r.w.bx = (unsigned)(SF2_ST(&gmap, z) & 0xFFFFL);   /* want 53031 = 0xCF27 */
         r.w.cx = (unsigned)z->root;             /* want 76 */
         r.w.dx = z->voldcysus;                  /* want 0102 */
         play_zone(0, z, 60, 100, 0, 0);

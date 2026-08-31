@@ -5,14 +5,19 @@
  * with it. The SoundFont 2.0 format is publicly documented; this parser is
  * original work.
  *
- * The file is ~246KB and will not fit in a small-model data segment, but it
- * does not need to: every record is fixed size, so we seek per record and keep
- * only the resulting zone table (~18KB) resident. After startup there is no
- * further disk access.
+ * The file is 246KB (MC-8000) or 180KB (DMC-9000) and will not fit in a
+ * small-model data segment, but it does not need to: every record is fixed
+ * size, so we seek per record and keep only the resulting zone table
+ * resident. After startup there is no further disk access.
  *
- * For the TDK MC-8000 the bank's sdta chunk is empty and every sample is
- * type 0x8001 (ROM-mono), so what we extract is purely a map into the card's
- * own 2MB ROM: key range, root key, tuning and loop points.
+ * The bank's sdta chunk is empty and every sample is type 0x8001 (ROM-mono),
+ * so what we extract is purely a map into the card's own sample ROM: key
+ * range, root key, tuning and loop points.
+ *
+ * Two tables come out of it, in one DOS block: the zones, and a shared table
+ * of sample addresses the zones index into. A preset's key-range zones nearly
+ * all quote the same sample, so that indirection removes most of the table -
+ * on the 9000's own bank, 1281 zones reference 448 distinct samples.
  */
 
 #include <string.h>
@@ -385,6 +390,32 @@ static int effo(int op, int dflt)
     return dflt;
 }
 
+/* the transient layout: zones, then the sample table */
+#define SF2_SAMPBASE  (SF2_MAXZONE * (long)sizeof(SF2ZONE))
+#define SF2_ARENA     (SF2_SAMPBASE + SF2_MAXZONE * (long)sizeof(SF2SMPE))
+
+/* Intern one sample triple, returning its index. Zones arrive grouped by
+ * instrument, so the entry just added is nearly always the right one -
+ * checking it first turns this from a scan into a comparison. */
+static unsigned samp_intern(SF2MAP *m, unsigned long st,
+                            unsigned long ls, unsigned long le)
+{
+    unsigned i;
+    if (m->nsamp) {
+        SF2SMPE __far *e = &m->samp[m->nsamp - 1];
+        if (e->st == st && e->ls == ls && e->le == le) return m->nsamp - 1;
+    }
+    for (i = 0; i < m->nsamp; i++)
+        if (m->samp[i].st == st && m->samp[i].ls == ls && m->samp[i].le == le)
+            return i;
+    if (m->nsamp >= SF2_MAXZONE) return 0;      /* cannot happen: one entry
+                                                 * per zone at worst */
+    m->samp[m->nsamp].st = st;
+    m->samp[m->nsamp].ls = ls;
+    m->samp[m->nsamp].le = le;
+    return m->nsamp++;
+}
+
 int sf2_load(char *path, SF2MAP *m)
 {
     long fsz;
@@ -403,18 +434,23 @@ int sf2_load(char *path, SF2MAP *m)
     memset(m->count, 0, sizeof(m->count));
     memset(m->dexcl, 0, sizeof(m->dexcl));
 
+    /* One block holds both tables: zones from the start, and the sample
+     * table parked at SAMPBASE while parsing - the final zone count is
+     * not known until the end, so the samples are shuffled down against
+     * the zones afterwards and the block resized to the pair. */
     if (m->zseg == 0) {
 #ifdef __WATCOMC__
-        if (zalloc((unsigned)((SF2_MAXZONE * sizeof(SF2ZONE) + 15L) / 16),
-                   &m->zseg))
+        if (zalloc((unsigned)((SF2_ARENA + 15L) / 16), &m->zseg))
             return SF2_ENOMEM;
         m->zone = (SF2ZP)MK_FP(m->zseg, 0);
 #else
-        m->zone = malloc(SF2_MAXZONE * sizeof(SF2ZONE));
+        m->zone = (SF2ZP)malloc(SF2_ARENA);
         if (!m->zone) return SF2_ENOMEM;
         m->zseg = 1;
 #endif
     }
+    m->samp  = (SF2SMPE __far *)((char __far *)m->zone + SF2_SAMPBASE);
+    m->nsamp = 0;
 
     if (io_open(path)) return SF2_ENOFILE;
 
@@ -525,10 +561,7 @@ int sf2_load(char *path, SF2MAP *m)
                         s.le = s.en + 8;
                     }
                 }
-                m->zone[m->nzone].st    = s.st;
-                m->zone[m->nzone].en    = s.en;
-                m->zone[m->nzone].ls    = s.ls;
-                m->zone[m->nzone].le    = s.le;
+                m->zone[m->nzone].sid   = samp_intern(m, s.st, s.ls, s.le);
                 m->zone[m->nzone].cents = cents;
                 {
                     int sc = effc(G_SCALETUNE, 100, 0, 1200);
@@ -581,10 +614,20 @@ int sf2_load(char *path, SF2MAP *m)
 
     io_close();
     if (m->nzone) {
+        /* close the gap: the sample table moves down against the zones.
+         * dest < src always, so a forward copy is safe. */
+        char __far *dst = (char __far *)m->zone
+                        + m->nzone * (long)sizeof(SF2ZONE);
+        char __far *src = (char __far *)m->samp;
+        unsigned long n = m->nsamp * (unsigned long)sizeof(SF2SMPE), k;
+        for (k = 0; k < n; k++) dst[k] = src[k];
+        m->samp = (SF2SMPE __far *)dst;
 #ifdef __WATCOMC__
-        unsigned mx;                  /* shrink the block to what is used */
-        _dos_setblock((unsigned)((m->nzone * (unsigned long)sizeof(SF2ZONE)
-                                  + 15L) / 16), m->zseg, &mx);
+        {
+            unsigned mx;              /* shrink the block to what is used */
+            _dos_setblock((unsigned)(((dst - (char __far *)m->zone) + n + 15L)
+                                     / 16), m->zseg, &mx);
+        }
 #endif
         return SF2_OK;
     }

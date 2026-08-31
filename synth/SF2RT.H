@@ -23,11 +23,20 @@
 #define SF2_EPARSE  -2
 #define SF2_ENOMEM  -3
 
+/* Where the sample sits in the card's ROM. Zones quote these rather than
+ * carrying them: a preset's key-range zones nearly all share one sample,
+ * so on the DMC-9000's own bank 1281 zones reference just 448 distinct
+ * entries. 'en' is not here because nothing reads it - the EMU loops
+ * between ls and le and the envelope ends the note. */
+typedef struct {
+    unsigned long st, ls, le;
+} SF2SMPE;
+
 typedef struct {
     unsigned char lo, hi, root, modes;   /* modes: sample flags in bits 0-1,
                                           * filterQ (0-15) in bits 4-7 - the
                                           * zone table cannot afford a byte */
-    unsigned long st, en, ls, le;
+    unsigned      sid;                   /* index into SF2MAP.samp */
     int  cents;                   /* coarse*100 + fine + pitchCorrection */
     unsigned char atten;          /* IFATN low byte  */
     unsigned char cutoff;         /* IFATN high byte */
@@ -49,12 +58,21 @@ typedef struct {
 
 typedef SF2ZONE __far *SF2ZP;
 
+/* Where a zone's sample lives. Read through these, never through the
+ * fields: the addresses are about to move into a shared table (many
+ * zones quote the same sample) and only these three call sites should
+ * have to know. */
+#define SF2_ST(m, z)  ((m)->samp[(z)->sid].st)
+#define SF2_LS(m, z)  ((m)->samp[(z)->sid].ls)
+#define SF2_LE(m, z)  ((m)->samp[(z)->sid].le)
+
 typedef struct {
     unsigned short first[128], count[128];   /* the melodic bank        */
     unsigned short dfirst, dcount;           /* the chosen drum kit     */
     unsigned char  dexcl[128];               /* drum note -> exclusiveClass
                                               * choke group (0 = none)  */
     unsigned       nzone;
+    unsigned       nsamp;                    /* entries in samp[]       */
     unsigned       zseg;                     /* the zone table's own DOS
                                               * block (UMB when one is
                                               * linked), resized to nzone
@@ -62,6 +80,9 @@ typedef struct {
                                               * DGROUP, NOT in the TSR's
                                               * kept image               */
     SF2ZP          zone;
+    SF2SMPE __far *samp;                     /* the shared sample table,
+                                              * inside the same block,
+                                              * immediately after zone[] */
 } SF2MAP;
 
 /* Which banks sf2_load builds the map from.
