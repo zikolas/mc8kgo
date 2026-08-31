@@ -15,13 +15,13 @@
  * own 2MB ROM: key range, root key, tuning and loop points.
  */
 
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #ifdef __WATCOMC__
 #include <dos.h>
 #endif
 #include "SF2RT.H"
+#include "DOSIO.H"
 
 /* ---- chunk locations, found by walking the RIFF tree ----
  * NOTE: locating chunks by searching for the 4-byte id does NOT work - the id
@@ -32,12 +32,11 @@
 typedef struct { long off; unsigned long size; } CHK;
 
 static CHK c_phdr, c_pbag, c_pgen, c_inst, c_ibag, c_igen, c_shdr;
-static FILE *fp;
 
 static unsigned long rd32(void)
 {
     unsigned char b[4];
-    if (fread(b, 1, 4, fp) != 4) return 0;
+    if (io_read(b, 4) != 4) return 0;
     return (unsigned long)b[0] | ((unsigned long)b[1] << 8)
          | ((unsigned long)b[2] << 16) | ((unsigned long)b[3] << 24);
 }
@@ -45,7 +44,7 @@ static unsigned long rd32(void)
 static unsigned rd16(void)
 {
     unsigned char b[2];
-    if (fread(b, 1, 2, fp) != 2) return 0;
+    if (io_read(b, 2) != 2) return 0;
     return (unsigned)b[0] | ((unsigned)b[1] << 8);
 }
 
@@ -66,11 +65,11 @@ static int walk(long off, long end)
     unsigned long sz;
 
     while (off + 8 <= end) {
-        if (fseek(fp, off, SEEK_SET)) return 0;
-        if (fread(id, 1, 4, fp) != 4) return 0;
+        if (io_seek(off)) return 0;
+        if (io_read(id, 4) != 4) return 0;
         sz = rd32();
         if (!memcmp(id, "RIFF", 4) || !memcmp(id, "LIST", 4)) {
-            if (fread(typ, 1, 4, fp) != 4) return 0;
+            if (io_read(typ, 4) != 4) return 0;
             if (!walk(off + 12, off + 8 + (long)sz)) return 0;
         } else {
             note_chunk(id, off + 8, sz);
@@ -84,24 +83,24 @@ static int walk(long off, long end)
 
 static void pbag_at(unsigned i, unsigned *gen)
 {
-    fseek(fp, c_pbag.off + (long)i * 4, SEEK_SET);
+    io_seek(c_pbag.off + (long)i * 4);
     *gen = rd16();
 }
 
 static void ibag_at(unsigned i, unsigned *gen)
 {
-    fseek(fp, c_ibag.off + (long)i * 4, SEEK_SET);
+    io_seek(c_ibag.off + (long)i * 4);
     *gen = rd16();
 }
 
 static void shdr_at(unsigned i, SF2SMP *s)
 {
-    fseek(fp, c_shdr.off + (long)i * 46 + 20, SEEK_SET);
+    io_seek(c_shdr.off + (long)i * 46 + 20);
     s->st = rd32(); s->en = rd32(); s->ls = rd32(); s->le = rd32();
     (void)rd32();                       /* sample rate */
-    fseek(fp, c_shdr.off + (long)i * 46 + 40, SEEK_SET);
-    s->root = (unsigned char)fgetc(fp);
-    s->pc   = (int)(signed char)fgetc(fp);   /* pitchCorrection, cents */
+    io_seek(c_shdr.off + (long)i * 46 + 40);
+    s->root = (unsigned char)io_getc();
+    s->pc   = (int)(signed char)io_getc();   /* pitchCorrection, cents */
 }
 
 /* Collect generators for one zone into a small sparse list. We only care
@@ -338,7 +337,7 @@ static void read_gens(long base, unsigned g0, unsigned g1, GENS *g)
 {
     unsigned i, op, am;
     memset(g->have, 0, sizeof(g->have));
-    fseek(fp, base + (long)g0 * 4, SEEK_SET);
+    io_seek(base + (long)g0 * 4);
     for (i = g0; i < g1; i++) {
         op = rd16();
         am = rd16();
@@ -417,29 +416,27 @@ int sf2_load(char *path, SF2MAP *m)
 #endif
     }
 
-    fp = fopen(path, "rb");
-    if (!fp) return SF2_ENOFILE;
+    if (io_open(path)) return SF2_ENOFILE;
 
-    fseek(fp, 0, SEEK_END);
-    fsz = ftell(fp);
+    fsz = io_size();
     memset(&c_phdr, 0, sizeof(c_phdr));
     c_pbag.off = c_pgen.off = c_inst.off = 0;
     c_ibag.off = c_igen.off = c_shdr.off = 0;
-    if (!walk(0, fsz)) { fclose(fp); return SF2_EPARSE; }
+    if (!walk(0, fsz)) { io_close(); return SF2_EPARSE; }
     if (!c_phdr.off || !c_pgen.off || !c_igen.off || !c_shdr.off) {
-        fclose(fp); return SF2_EPARSE;
+        io_close(); return SF2_EPARSE;
     }
 
     nphdr = (unsigned)(c_phdr.size / 38);
     ninst = (unsigned)(c_inst.size / 22);
-    if (nphdr < 2) { fclose(fp); return SF2_EPARSE; }
+    if (nphdr < 2) { io_close(); return SF2_EPARSE; }
 
     for (k = 0; k + 1 < nphdr; k++) {
-        fseek(fp, c_phdr.off + (long)k * 38 + 20, SEEK_SET);
+        io_seek(c_phdr.off + (long)k * 38 + 20);
         prog = rd16();
         bank = rd16();
         bagndx = rd16();
-        fseek(fp, c_phdr.off + (long)(k + 1) * 38 + 24, SEEK_SET);
+        io_seek(c_phdr.off + (long)(k + 1) * 38 + 24);
         nextbag = rd16();
 
         if (bank == 128 && prog == g_drumprog) {
@@ -466,9 +463,9 @@ int sf2_load(char *path, SF2MAP *m)
             instndx = (unsigned)pz.val[G_INSTRUMENT];
             if (instndx + 1 > ninst) continue;
 
-            fseek(fp, c_inst.off + (long)instndx * 22 + 20, SEEK_SET);
+            io_seek(c_inst.off + (long)instndx * 22 + 20);
             ibag0 = rd16();
-            fseek(fp, c_inst.off + (long)(instndx + 1) * 22 + 20, SEEK_SET);
+            io_seek(c_inst.off + (long)(instndx + 1) * 22 + 20);
             ibag1 = rd16();
 
             memset(iglob.have, 0, sizeof(iglob.have));
@@ -582,7 +579,7 @@ int sf2_load(char *path, SF2MAP *m)
         }
     }
 
-    fclose(fp);
+    io_close();
     if (m->nzone) {
 #ifdef __WATCOMC__
         unsigned mx;                  /* shrink the block to what is used */

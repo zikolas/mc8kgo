@@ -148,17 +148,16 @@ int main(int argc, char **argv)
     unsigned chmask = 0xFFFF, iobase = 0;
     unsigned paras;
 
-    setbuf(stdout, NULL);
-    printf("TDKSYN - GM synth for the TDK MC-8000/DMC-9000 wavetable\n");
+    o_str("TDKSYN - GM synth for the TDK MC-8000/DMC-9000 wavetable\r\n");
 
     for (i = 1; i < argc; i++) {
         if (argv[i][0] == '/' || argv[i][0] == '-') {
             if (argv[i][1] == 'h' || argv[i][1] == 'H')
-                sscanf(argv[i] + 2, "%x,%x,%x", &g_h1, &g_h2, &g_h3);
+                p_hex3(argv[i] + 2, &g_h1, &g_h2, &g_h3);
             else if (argv[i][1] == 'f' || argv[i][1] == 'F') path = argv[i] + 2;
             else if (argv[i][1] == 'm' || argv[i][1] == 'M') mt32 = 1;
             else if (argv[i][1] == 'a' || argv[i][1] == 'A') {
-                sscanf(argv[i] + 2, "%d", &atkmax);
+                atkmax = p_dec(argv[i] + 2);
                 agiven = 1;
             }
             else if (argv[i][1] == 'x' || argv[i][1] == 'X') {
@@ -169,11 +168,11 @@ int main(int argc, char **argv)
                  * low PIANO doubling every hit. */
                 chmask = 0x03FF; maskgiven = 1;
             } else if (argv[i][1] == 'c' || argv[i][1] == 'C') {
-                sscanf(argv[i] + 2, "%x", &chmask); maskgiven = 1;
+                chmask = p_hex(argv[i] + 2); maskgiven = 1;
             } else if (argv[i][1] == 'i' || argv[i][1] == 'I') {
                 char *q = argv[i] + 2;      /* /IO=260 or /I260 */
                 while (*q == 'o' || *q == 'O' || *q == '=') q++;
-                sscanf(q, "%x", &iobase);
+                iobase = p_hex(q);
                 iogiven = 1;
             }
         }
@@ -186,27 +185,34 @@ int main(int argc, char **argv)
             && (argv[i][1] == 'u' || argv[i][1] == 'U')) {
             union REGS ri, ro;
             struct SREGS sr;
-            if (!already_resident()) { printf("not resident.\n"); return 1; }
+            unsigned rpsp, rzone;
+            if (!already_resident()) { o_str("not resident.\r\n"); return 1; }
             ri.h.ah = 0xBD; ri.h.al = 0xFE;
             ri.x.cx = 0;                      /* an OLDER resident copy
                                                * echoes CX untouched - never
                                                * free a garbage segment */
             int86(0x2F, &ri, &ro);
+            /* Latch both segments NOW. The frees below write their own
+             * results into ro, so reading ro.x.bx after the first one
+             * frees whatever DOS happened to leave in BX - which silently
+             * leaked the whole resident image on every unload. */
+            rpsp  = ro.x.bx;
+            rzone = ro.x.cx;
             segread(&sr);
-            if (ro.x.cx) {                    /* the zone table's block */
-                sr.es = ro.x.cx;
+            if (rzone) {                      /* the zone table's block */
+                sr.es = rzone;
                 ri.h.ah = 0x49;
                 int86x(0x21, &ri, &ro, &sr);
             }
-            sr.es = ro.x.bx;                  /* the resident PSP */
+            sr.es = rpsp;                     /* the resident PSP */
             ri.h.ah = 0x49;                   /* free the memory block */
             int86x(0x21, &ri, &ro, &sr);
-            printf("unloaded.\n");
+            o_str("unloaded.\r\n");
             return 0;
         }
 
     if (already_resident()) {
-        printf("already resident. Use /U to unload first.\n");
+        o_str("already resident. Use /U to unload first.\r\n");
         return 1;
     }
 
@@ -219,15 +225,15 @@ int main(int argc, char **argv)
     else if (!synth_detect()) {
         synth_base(0x260);
         if (!synth_detect()) {
-            printf("no EMU answers at 240h or 260h - is the card enabled"
-                   " (MC8KGO)?\n/IO=hex overrides the probe.\n");
+            o_str("no EMU answers at 240h or 260h - is the card enabled"
+                  " (MC8KGO)?\r\n/IO=hex overrides the probe.\r\n");
             return 1;
         }
     }
     if (g_w0 == 0x260 && path == deflt)
-        printf("DMC-9000 window (260h): this SoundFont maps the MC-8000's\n"
-               "ROM - instruments will be WRONG until the 9000's own bank\n"
-               "is dumped (/F<file> loads another bank).\n");
+        o_str("DMC-9000 window (260h): this SoundFont maps the MC-8000's\r\n"
+              "ROM - instruments will be WRONG until the 9000's own bank\r\n"
+              "is dumped (/F<file> loads another bank).\r\n");
 
     /* Pick the banks BEFORE loading - sf2_load builds the map from them.
      * A game set to MT-32 output sends MT-32 timbre numbers, so resolving it
@@ -237,31 +243,33 @@ int main(int argc, char **argv)
     synth_chmask(chmask);
     rc = sf2_load(path, &gmap);
     if (rc == SF2_ENOFILE) {
-        printf("cannot open %s\n", path);
-        printf("This needs the SoundFont the vendor installer puts at that\n");
-        printf("path; /F<path> overrides. No preset data is built in.\n");
+        o_str("cannot open "); o_str(path); o_str("\r\n");
+        o_str("This needs the SoundFont the vendor installer puts at that\r\n"
+              "path; /F<path> overrides. No preset data is built in.\r\n");
         return 1;
     }
     if (rc == SF2_ENOMEM) {
-        printf("no DOS memory for the zone table (%u paras)\n",
-               (unsigned)((SF2_MAXZONE * sizeof(SF2ZONE) + 15L) / 16));
+        o_str("no DOS memory for the zone table (");
+        o_u((unsigned)((SF2_MAXZONE * sizeof(SF2ZONE) + 15L) / 16));
+        o_str(" paras)\r\n");
         return 1;
     }
-    if (rc != SF2_OK) { printf("could not parse that SoundFont\n"); return 1; }
+    if (rc != SF2_OK) { o_str("could not parse that SoundFont\r\n"); return 1; }
     if (gmap.nzone == 0) {
-        printf("no zones for that mode - is this the right SoundFont?\n");
+        o_str("no zones for that mode - is this the right SoundFont?\r\n");
         return 1;
     }
 
-    printf("EMU %03Xh  %s  %u+%u zones", g_w0,
-           mt32 ? "MT-32 (bank 127 + CM-64/32 kit)"
-                : "General MIDI (bank 0 + Standard kit)",
-           gmap.nzone - gmap.dcount, gmap.dcount);
-    if (chmask == 0x03FF)      printf("  channels 1-10");
-    else if (chmask == 0x03FE) printf("  channels 2-10");
-    else if (chmask != 0xFFFF) printf("  channel mask %04X", chmask);
-    if (agiven) printf("  attack cap %d", atkmax);
-    printf("\n");
+    o_str("EMU "); o_x(g_w0, 3); o_str("h  ");
+    o_str(mt32 ? "MT-32 (bank 127 + CM-64/32 kit)"
+               : "General MIDI (bank 0 + Standard kit)");
+    o_str("  "); o_u(gmap.nzone - gmap.dcount);
+    o_str("+");  o_u(gmap.dcount); o_str(" zones");
+    if (chmask == 0x03FF)      o_str("  channels 1-10");
+    else if (chmask == 0x03FE) o_str("  channels 2-10");
+    else if (chmask != 0xFFFF) { o_str("  channel mask "); o_x(chmask, 4); }
+    if (agiven) { o_str("  attack cap "); o_d(atkmax); }
+    o_str("\r\n");
 
     chip_init();
     synth_reset();
@@ -272,14 +280,15 @@ int main(int argc, char **argv)
     old2f = _dos_getvect(0x2F);
     _dos_setvect(0x2F, handler);
 
-    printf("resident on INT 2Fh id %02Xh - MPUSHIM /SYNTH feeds it; /U unloads\n",
-           MPLEX_AH);
+    o_str("resident on INT 2Fh id "); o_x(MPLEX_AH, 2);
+    o_str("h - MPUSHIM /SYNTH feeds it; /U unloads\r\n");
 
     /* Stay resident, keeping exactly the block DOS gave us. Its size in
      * paragraphs is in our MCB, one paragraph below the PSP at offset 3.
-     * This keeps the SoundFont parser and stdio too, which is wasteful - the
-     * zone table is the only part that must survive - but correct. Trimming
-     * it is a later optimisation, not a correctness issue. */
+     * The C library's file and formatting code is no longer in here (see
+     * DOSIO.H). What still rides along is the SoundFont parser, which only
+     * runs during install; discarding that as well means splitting the
+     * image, which this does not attempt. */
     {   /* the environment block is transient too */
         unsigned envseg = *(unsigned __far *)MK_FP(_psp, 0x2C);
         if (envseg) _dos_freemem(envseg);
