@@ -1,5 +1,5 @@
 ;==========================================================================
-;  MC8KGO 0.1 - unified clean-room DOS enabler for the TDK MusicCard
+;  MC8KGO 0.2 - unified clean-room DOS enabler for the TDK MusicCard
 ;              MC-8000 (MW-8232) and DMC-9000 (MW-8432) PCMCIA sound
 ;              cards (EMU8000-family wavetable + CS4216 codec + a 16550
 ;              MIDI DIN UART), three host backends in one .COM:
@@ -3252,7 +3252,7 @@ errout:                               ; SI = message; print + exit
 ;==========================================================================
 ;  MESSAGES
 ;==========================================================================
-m_banner:  db 'MC8KGO 0.1 - TDK MusicCard MC-8000/DMC-9000 enabler (PCIC/CS/OB)',13,10,0
+m_banner:  db 'MC8KGO 0.2 - TDK MusicCard MC-8000/DMC-9000 enabler (PCIC/CS/OB)',13,10,0
 m_settle:  db 'Socket is slow: CIS settled after ',0
 m_settle2: db ' x 20ms.',13,10,0
 m_settlot: db '2s or more.',13,10,0
