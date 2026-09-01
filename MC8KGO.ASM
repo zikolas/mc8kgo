@@ -1,5 +1,5 @@
 ;==========================================================================
-;  MC8KGO 0.2 - unified clean-room DOS enabler for the TDK MusicCard
+;  MC8KGO 0.3 - unified clean-room DOS enabler for the TDK MusicCard
 ;              MC-8000 (MW-8232) and DMC-9000 (MW-8432) PCMCIA sound
 ;              cards (EMU8000-family wavetable + CS4216 codec + a 16550
 ;              MIDI DIN UART), three host backends in one .COM:
@@ -69,7 +69,7 @@ MODE_PCIC equ 3
 ; blocks BY OFFSET between two runs of the same binary, so bump this on
 ; EVERY release - offsets shift with any rebuild, and a mismatched resident
 ; copy must be refused (reboot to replace), never driven.
-SGVER   equ 0001h
+SGVER   equ 0002h
 
 TDMAX   equ 40h                       ; CS tuple-data buffer size
 VBMAX   equ 40h                       ; VERS_1 capture buffer size
@@ -210,8 +210,8 @@ P_IRQ_LEN equ 8
 p_cfg:   dw 0                         ; +00 socket
 p_cfg_at dw 0002h                     ; +02 attrs: bit1 = IRQ active
 p_cfg_vc db 50                        ; +04 Vcc  (tenths of a volt)
-p_cfg_v1 db 50                        ; +05 Vpp1
-p_cfg_v2 db 50                        ; +06 Vpp2
+p_cfg_v1 db 0                         ; +05 Vpp1
+p_cfg_v2 db 0                         ; +06 Vpp2
          db 02h                       ; +07 interface: I/O+memory
 p_cfg_cb dd 00000100h                 ; +08 config register base
 p_cfg_st db 02h                       ; +0C status reg (CCSR): Audio bit
@@ -594,17 +594,13 @@ cs_configure:
         mov  word [p_cfg_at], 0
 .cat:
         mov  byte [p_cfg_vc], 50
-        mov  byte [p_cfg_v1], 50
-        mov  byte [p_cfg_v2], 50
+        mov  byte [p_cfg_v1], 0       ; Vpp OFF, no fallback: we never program
+        mov  byte [p_cfg_v2], 0
         mov  byte [p_cfg_pr], 03h     ; present: option + status (CCSR)
         mov  byte [p_cfg_st], 02h     ; CCSR value: the Audio bit
         call try_cfg                  ; walks candidate ArgLengths (1Bh dance)
         jnc  .cfgok
-        mov  byte [p_cfg_v1], 0       ; some stacks reject Vpp=Vcc
-        mov  byte [p_cfg_v2], 0
-        call try_cfg
-        jnc  .cfgok
-        mov  byte [p_cfg_pr], 01h     ; or dislike the CCSR write: COR only
+        mov  byte [p_cfg_pr], 01h     ; stack dislikes the CCSR write: COR only
         call try_cfg
         jnc  .cfgok
         mov  [r_code], ax
@@ -3252,7 +3248,7 @@ errout:                               ; SI = message; print + exit
 ;==========================================================================
 ;  MESSAGES
 ;==========================================================================
-m_banner:  db 'MC8KGO 0.2 - TDK MusicCard MC-8000/DMC-9000 enabler (PCIC/CS/OB)',13,10,0
+m_banner:  db 'MC8KGO 0.3 - TDK MusicCard MC-8000/DMC-9000 enabler (PCIC/CS/OB)',13,10,0
 m_settle:  db 'Socket is slow: CIS settled after ',0
 m_settle2: db ' x 20ms.',13,10,0
 m_settlot: db '2s or more.',13,10,0
